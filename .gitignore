@@ -1,0 +1,72 @@
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+.env/
+.python-version
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IDE specific files
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+.spyderproject
+.spyproject
+.ropeproject
+.coverage
+htmlcov/
+
+# Streamlit
+.streamlit/secrets.toml
+.streamlit/config.toml
+
+# Selenium / WebDriver
+.wdm/
+chromedriver
+chromedriver.exe
+geckodriver
+geckodriver.exe
+
+# Logs and databases
+*.log
+*.sqlite3
+*.db
+
+# OS specific files
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Exports and data files
+*.csv
+*.xlsx
+*.json
+*.xls
+*.zip
+*.parquet
+*.feather
+
+# Sensitive data
+secrets.toml
+.env
+.env.*
+config.ini
