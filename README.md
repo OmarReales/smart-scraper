@@ -13,8 +13,11 @@ Smart Scraper IA es una aplicación que combina web scraping con inteligencia ar
 ## ✨ Características principales
 
 - **Extracción de datos simplificada**: Selección intuitiva de elementos HTML mediante etiquetas, clases, IDs o selectores CSS
-- **Soporte para páginas dinámicas**: Opción para extraer contenido de sitios con JavaScript usando Selenium
-- **Múltiples modelos de IA**: Compatibilidad con Gemini (Google), ChatGPT (OpenAI) y Groq
+- **Autodetección inteligente**: Detecta automáticamente elementos relevantes según el tipo de página
+- **Plantillas predefinidas**: Usa plantillas para diferentes tipos de sitios web como e-commerce, noticias, o tablas de datos
+- **Gestión de proyectos**: Guarda y reutiliza tus proyectos de extracción para uso futuro
+- **Soporte para páginas dinámicas**: Extrae contenido de sitios con JavaScript usando Selenium y detección automática de navegadores
+- **Múltiples modelos de IA**: Compatibilidad con Gemini (Google), ChatGPT (OpenAI) y una amplia variedad de modelos Groq (Llama 3.3, Gemma 2, etc.)
 - **Interfaz responsiva**: Diseñada para funcionar en dispositivos móviles y de escritorio
 - **Exportación flexible**: Guarda los resultados en CSV, JSON o Excel
 - **Análisis inteligente**: Obtén insights sobre los datos extraídos mediante IA
@@ -32,7 +35,9 @@ Smart Scraper IA es una aplicación que combina web scraping con inteligencia ar
     ├── __init__.py              # Inicialización del paquete
     ├── ai_helpers.py            # Funciones para interacción con IA
     ├── scraper.py               # Funciones de web scraping
-    └── validators.py            # Validadores y utilidades
+    ├── validators.py            # Validadores y utilidades
+    ├── autodetect.py            # Funciones para autodetección de elementos
+    └── templates.py             # Plantillas predefinidas para diferentes tipos de sitios web
 ```
 
 ## 🛠️ Requisitos e instalación
@@ -109,7 +114,7 @@ La aplicación soporta tres motores de IA:
 
 - **Gemini (Google)**: Modelos como gemini-2.0-flash y gemini-pro
 - **ChatGPT (OpenAI)**: Acceso a GPT-3.5 Turbo
-- **Groq**: Modelo llama2-70b-4096
+- **Groq**: Modelos como Llama 3.3 y Gemma 2
 
 Puedes usar estos modelos para:
 

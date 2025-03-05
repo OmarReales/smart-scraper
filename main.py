@@ -3,7 +3,11 @@ import pandas as pd
 import time
 from utils.validators import is_valid_url
 from utils.scraper import scrape_website_static, scrape_website_dynamic
-from utils.ai_helpers import ask_chatgpt, ask_groq, ask_gemini, analyze_scraped_data
+from utils.ai_helpers import ask_chatgpt, ask_groq, ask_gemini, analyze_scraped_data, GROQ_MODELS
+# Importaciones de los nuevos módulos (ahora se utilizarán)
+from utils.templates import get_all_templates, save_custom_template
+from utils.auto_detect import auto_detect_elements
+from utils.project_manager import save_project, load_project, list_projects, delete_project, update_project
 
 # Configuración de la página con mejor soporte para móviles
 st.set_page_config(
@@ -55,6 +59,33 @@ st.markdown("""
     .stTextInput, .stSelectbox, .stMultiselect {
         width: 100%;
     }
+    
+    /* Estilo para tarjetas de proyectos */
+    .project-card {
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        padding: 10px;
+        margin-bottom: 10px;
+        background-color: #f9f9f9;
+    }
+    
+    /* Estilo para tarjetas de plantillas */
+    .template-card {
+        border: 1px solid #e0e0e0;
+        border-radius: 5px;
+        padding: 10px;
+        margin-bottom: 10px;
+        background-color: #f5f5f5;
+    }
+    
+    /* Estilo para tarjetas con resultados */
+    .results-card {
+        border: 1px solid #d0e0f0;
+        border-radius: 5px;
+        padding: 15px;
+        margin-bottom: 15px;
+        background-color: #f0f8ff;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -65,12 +96,37 @@ if 'last_url' not in st.session_state:
     st.session_state.last_url = ""
 if 'selected_tags' not in st.session_state:
     st.session_state.selected_tags = {}
+# Cambiar el modo predeterminado a "expanded"
 if 'view_mode' not in st.session_state:
-    st.session_state.view_mode = "compact"  # Modo compacto o expandido
+    st.session_state.view_mode = "expanded"  # Cambiado de "compact" a "expanded"
+# Inicializar el radio button para que coincida con el valor inicial
+if 'display_mode' not in st.session_state:
+    st.session_state.display_mode = "Expandido"  # Asegurarse de que coincida con el modo de visualización
+# Nuevas variables de estado
+if 'current_project_id' not in st.session_state:
+    st.session_state.current_project_id = None
+if 'auto_detected_elements' not in st.session_state:
+    st.session_state.auto_detected_elements = None
+if 'selected_groq_model' not in st.session_state:
+    st.session_state.selected_groq_model = "llama-3.3-70b-versatile"
+if 'templates' not in st.session_state:
+    st.session_state.templates = get_all_templates()
 
 # Función para cambiar el modo de visualización
 def change_view_mode():
     st.session_state.view_mode = "compact" if st.session_state.display_mode == "Compacto" else "expanded"
+
+# Función para cargar una plantilla
+def load_template(template_id, templates):
+    if template_id in templates:
+        template = templates[template_id]
+        st.session_state.selected_tags = template["tags"].copy()
+        
+        # Si la plantilla incluye configuraciones de Selenium
+        if "use_selenium" in template:
+            st.session_state.use_selenium = template["use_selenium"]
+        if "wait_time" in template:
+            st.session_state.wait_time = template["wait_time"]
 
 # Cargar API Keys desde secrets o inicializarlas
 def load_api_keys():
@@ -83,35 +139,162 @@ def load_api_keys():
         st.error(f"Error cargando API keys: {e}")
         return "", "", ""
 
+# Definir la URL al inicio para evitar errores de variable no definida
+url = st.session_state.get('last_url', '')
+is_url_valid = is_valid_url(url) if url else False
+
 # Sidebar mejorada para dispositivos móviles
 with st.sidebar:
     st.header("⚙️ Configuración")
     
-    # Modo de visualización
-    st.radio("Modo de visualización:", 
-             ["Compacto", "Expandido"], 
-             key="display_mode",
-             on_change=change_view_mode)
+    # Navegación principal
+    nav_option = st.selectbox("Navegación:", 
+                             ["Extracción", "Plantillas", "Proyectos", "Configuración"])
     
-    # Sección de API Keys más compacta
-    with st.expander("🔑 API Keys", expanded=False):
-        groq_key, gemini_key, chatgpt_key = load_api_keys()
-        
-        groq_api_key = st.text_input("Groq API", value=groq_key, type="password")
-        gemini_api_key = st.text_input("Gemini API", value=gemini_key, type="password")
-        chatgpt_api_key = st.text_input("ChatGPT API", value=chatgpt_key, type="password")
-        
-        if st.button("💾 Guardar"):
-            st.session_state.groq_api_key = groq_api_key
-            st.session_state.gemini_api_key = gemini_api_key
-            st.session_state.chatgpt_api_key = chatgpt_api_key
-            st.success("✅ Guardado")
+    if nav_option == "Extracción":
+        # Modo de visualización original
+        st.radio("Modo de visualización:", 
+                ["Compacto", "Expandido"], 
+                key="display_mode",
+                on_change=change_view_mode)
     
-    # Opciones avanzadas más compactas
-    with st.expander("⚡ Opciones Avanzadas", expanded=False):
-        use_selenium = st.checkbox("Usar Selenium", value=False,
-                                  help="Para contenido dinámico con JavaScript")
-        wait_time = st.slider("Tiempo espera (s)", 1, 10, 3)
+    elif nav_option == "Plantillas":
+        st.subheader("Gestión de Plantillas")
+        
+        # Mostrar plantillas disponibles
+        templates = st.session_state.templates
+        selected_template = st.selectbox("Seleccionar plantilla:", 
+                                        options=list(templates.keys()),
+                                        format_func=lambda x: templates[x].get("name", x))
+        
+        if st.button("Cargar plantilla"):
+            load_template(selected_template, templates)
+            st.success(f"Plantilla '{templates[selected_template].get('name')}' cargada")
+            st.rerun()
+        
+        # Opción para guardar plantilla actual
+        if st.session_state.selected_tags:
+            with st.expander("Guardar plantilla actual"):
+                template_name = st.text_input("Nombre de la plantilla:")
+                template_desc = st.text_input("Descripción:")
+                if st.button("Guardar plantilla"):
+                    if template_name:
+                        template_id = template_name.lower().replace(" ", "_")
+                        template_data = {
+                            "name": template_name,
+                            "description": template_desc,
+                            "tags": st.session_state.selected_tags,
+                            "use_selenium": st.session_state.get("use_selenium", False),
+                            "wait_time": st.session_state.get("wait_time", 3)
+                        }
+                        if save_custom_template(template_id, template_data):
+                            st.success(f"Plantilla '{template_name}' guardada")
+                            st.session_state.templates = get_all_templates()
+                            st.rerun()
+                        else:
+                            st.error("Error guardando plantilla")
+                    else:
+                        st.error("Debes proporcionar un nombre para la plantilla")
+    
+    elif nav_option == "Proyectos":
+        st.subheader("Gestión de Proyectos")
+        
+        # Listar proyectos existentes
+        projects = list_projects()
+        if projects:
+            selected_project = st.selectbox("Seleccionar proyecto:", 
+                                           options=[p["id"] for p in projects],
+                                           format_func=lambda x: next((p["name"] for p in projects if p["id"] == x), x))
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("Cargar proyecto"):
+                    project_data, error = load_project(selected_project)
+                    if project_data:
+                        st.session_state.last_url = project_data["url"]
+                        st.session_state.selected_tags = project_data["tags_info"]
+                        st.session_state.use_selenium = project_data.get("use_selenium", False)
+                        st.session_state.wait_time = project_data.get("wait_time", 3)
+                        st.session_state.current_project_id = selected_project
+                        
+                        if "results" in project_data and project_data["results"] is not None:
+                            st.session_state.scraping_results = project_data["results"]
+                        
+                        st.success(f"Proyecto '{project_data['name']}' cargado")
+                        st.rerun()
+                    else:
+                        st.error(f"Error: {error}")
+            
+            with col2:
+                if st.button("Eliminar proyecto"):
+                    success, message = delete_project(selected_project)
+                    if success:
+                        st.success(message)
+                        st.rerun()
+                    else:
+                        st.error(message)
+        else:
+            st.info("No hay proyectos guardados")
+        
+        # Guardar proyecto actual
+        if url and st.session_state.selected_tags:
+            with st.expander("Guardar proyecto actual"):
+                project_name = st.text_input("Nombre del proyecto:")
+                if st.button("Guardar proyecto"):
+                    if project_name:
+                        project_data = {
+                            "name": project_name,
+                            "url": url,
+                            "tags_info": st.session_state.selected_tags,
+                            "use_selenium": st.session_state.get("use_selenium", False),
+                            "wait_time": st.session_state.get("wait_time", 3)
+                        }
+                        
+                        if st.session_state.scraping_results is not None:
+                            project_data["results"] = st.session_state.scraping_results
+                            
+                        success, project_id = save_project(project_data)
+                        if success:
+                            st.session_state.current_project_id = project_id
+                            st.success(f"Proyecto '{project_name}' guardado")
+                            st.rerun()
+                        else:
+                            st.error(f"Error: {project_id}")
+                    else:
+                        st.error("Debes proporcionar un nombre para el proyecto")
+    
+    elif nav_option == "Configuración":
+        # Sección de API Keys
+        with st.expander("🔑 API Keys", expanded=True):
+            groq_key, gemini_key, chatgpt_key = load_api_keys()
+            
+            groq_api_key = st.text_input("Groq API", value=groq_key, type="password")
+            
+            # Agregar selector de modelo de Groq
+            st.write("Modelo de Groq:")
+            groq_model = st.selectbox(
+                "Selecciona un modelo:",
+                options=list(GROQ_MODELS.keys()),
+                format_func=lambda x: GROQ_MODELS[x],
+                index=list(GROQ_MODELS.keys()).index("llama-3.3-70b-versatile"),
+                key="groq_model_selector"
+            )
+            st.session_state.selected_groq_model = groq_model
+            
+            gemini_api_key = st.text_input("Gemini API", value=gemini_key, type="password")
+            chatgpt_api_key = st.text_input("ChatGPT API", value=chatgpt_key, type="password")
+            
+            if st.button("💾 Guardar"):
+                st.session_state.groq_api_key = groq_api_key
+                st.session_state.gemini_api_key = gemini_api_key
+                st.session_state.chatgpt_api_key = chatgpt_api_key
+                st.success("✅ Guardado")
+        
+        # Opciones avanzadas
+        with st.expander("⚡ Opciones Avanzadas", expanded=True):
+            use_selenium = st.checkbox("Usar Selenium", value=False,
+                                    help="Para contenido dinámico con JavaScript")
+            wait_time = st.slider("Tiempo espera (s)", 1, 10, 3)
 
 # Título de la app con ícono y descripción compacta
 col1, col2 = st.columns([1, 6])
@@ -139,6 +322,30 @@ tab1, tab2, tab3 = st.tabs(["📊 Extracción", "🔍 Resultados", "🤖 IA"])
 
 # Tab 1: Extracción más compacta
 with tab1:
+    # Agregar botón para autodetección
+    if url and is_url_valid:
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            if st.button("🔍 Autodetectar elementos", use_container_width=True):
+                with st.spinner("Analizando la página..."):
+                    detection_result = auto_detect_elements(url)
+                    if "error" in detection_result:
+                        st.error(f"Error: {detection_result['error']}")
+                    else:
+                        st.session_state.auto_detected_elements = detection_result
+                        st.session_state.selected_tags = detection_result["suggested_selectors"]
+                        st.success(f"Detectado tipo de página: {detection_result['page_type']}")
+                        st.rerun()
+        with col2:
+            templates = st.session_state.templates
+            template_options = list(templates.keys())
+            selected = st.selectbox("📋 Plantillas", options=template_options,
+                                   format_func=lambda x: templates[x].get("name", x))
+            if st.button("Aplicar plantilla", key="apply_template_btn", use_container_width=True):
+                load_template(selected, templates)
+                st.success(f"Plantilla '{templates[selected].get('name')}' aplicada")
+                st.rerun()
+                
     # Versión compacta para dispositivos pequeños
     tag_select_container = st.container()
     
@@ -407,6 +614,34 @@ with tab2:
         with col2:
             json_data = filtered_results.to_json(orient="records")
             st.download_button("📥 JSON", json_data, "scraping_results.json", "application/json", use_container_width=True)
+        
+        # Opción para guardar los resultados como proyecto
+        if url and st.session_state.selected_tags:
+            save_col1, save_col2 = st.columns([1, 3])
+            with save_col1:
+                if st.button("💾 Guardar como proyecto"):
+                    with save_col2:
+                        project_name = st.text_input("Nombre del proyecto:", key="quick_project_name")
+                        if st.button("Guardar"):
+                            if project_name:
+                                project_data = {
+                                    "name": project_name,
+                                    "url": url,
+                                    "tags_info": st.session_state.selected_tags,
+                                    "use_selenium": st.session_state.get("use_selenium", False),
+                                    "wait_time": st.session_state.get("wait_time", 3),
+                                    "results": st.session_state.scraping_results
+                                }
+                                
+                                success, project_id = save_project(project_data)
+                                if success:
+                                    st.session_state.current_project_id = project_id
+                                    st.success(f"Proyecto '{project_name}' guardado")
+                                    st.rerun()
+                                else:
+                                    st.error(f"Error: {project_id}")
+                            else:
+                                st.error("Debes proporcionar un nombre para el proyecto")
     else:
         st.info("Sin resultados. Ejecuta el scraping primero.")
 
@@ -426,8 +661,12 @@ with tab3:
                     st.write(response)
                     
             if st.button("Preguntar a Groq", use_container_width=True, disabled=not query):
-                with st.spinner("Consultando..."):
-                    response = ask_groq(query, st.session_state.get('groq_api_key', ''))
+                with st.spinner(f"Consultando a Groq (modelo: {GROQ_MODELS.get(st.session_state.selected_groq_model)})..."):
+                    response = ask_groq(
+                        query, 
+                        st.session_state.get('groq_api_key', ''),
+                        st.session_state.selected_groq_model
+                    )
                     st.write(response)
                     
             if st.button("Preguntar a Gemini", use_container_width=True, disabled=not query):
@@ -447,8 +686,12 @@ with tab3:
             
             with col2:
                 if st.button("Preguntar a Groq", use_container_width=True, disabled=not query):
-                    with st.spinner("Consultando a Groq..."):
-                        response = ask_groq(query, st.session_state.get('groq_api_key', ''))
+                    with st.spinner(f"Consultando a Groq (modelo: {GROQ_MODELS.get(st.session_state.selected_groq_model)})..."):
+                        response = ask_groq(
+                            query, 
+                            st.session_state.get('groq_api_key', ''),
+                            st.session_state.selected_groq_model
+                        )
                         st.write("### Groq")
                         st.write(response)
             
@@ -464,6 +707,16 @@ with tab3:
         if st.session_state.scraping_results is not None and not st.session_state.scraping_results.empty:
             ai_model = st.radio("Modelo de IA:", ["Groq", "ChatGPT", "Gemini"], horizontal=True)
             
+            # Si se selecciona Groq, mostrar selector de modelo
+            if ai_model == "Groq":
+                groq_analysis_model = st.selectbox(
+                    "Modelo Groq para análisis:",
+                    options=list(GROQ_MODELS.keys()),
+                    format_func=lambda x: GROQ_MODELS[x],
+                    index=list(GROQ_MODELS.keys()).index(st.session_state.selected_groq_model),
+                    key="groq_analysis_model_selector"
+                )
+            
             if st.button("Analizar datos", use_container_width=True):
                 with st.spinner(f"Analizando con {ai_model}..."):
                     api_key = ""
@@ -472,18 +725,30 @@ with tab3:
                     if ai_model == "ChatGPT":
                         api_key = st.session_state.get('chatgpt_api_key', '')
                         model_type = "chatgpt"
+                        analysis = analyze_scraped_data(
+                            st.session_state.scraping_results,
+                            api_key,
+                            model_type
+                        )
                     elif ai_model == "Groq":
                         api_key = st.session_state.get('groq_api_key', '')
                         model_type = "groq"
+                        groq_model = groq_analysis_model if 'groq_analysis_model' in locals() else st.session_state.selected_groq_model
+                        analysis = analyze_scraped_data(
+                            st.session_state.scraping_results,
+                            api_key,
+                            model_type,
+                            groq_model
+                        )
                     else:
                         api_key = st.session_state.get('gemini_api_key', '')
                         model_type = "gemini"
+                        analysis = analyze_scraped_data(
+                            st.session_state.scraping_results,
+                            api_key,
+                            model_type
+                        )
                         
-                    analysis = analyze_scraped_data(
-                        st.session_state.scraping_results,
-                        api_key,
-                        model_type
-                    )
                     st.write("### Análisis")
                     st.write(analysis)
         else:

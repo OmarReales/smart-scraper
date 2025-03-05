@@ -8,6 +8,20 @@ import google.generativeai as genai
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Lista de modelos de Groq disponibles
+GROQ_MODELS = {
+    "llama-3.3-70b-versatile": "Llama 3.3 70B Versatile (Recomendado)",
+    "llama-3.1-8b-instant": "Llama 3.1 8B Instant (Rápido)",
+    "llama3-70b-8192": "Llama 3 70B",
+    "llama3-8b-8192": "Llama 3 8B",
+    "gemma2-9b-it": "Gemma 2 9B",
+    "mixtral-8x7b-32768": "Mixtral 8x7B",
+    "llama-guard-3-8b": "Llama Guard 3 8B",
+    "distil-whisper-large-v3-en": "Whisper Large V3 (Inglés)",
+    "whisper-large-v3": "Whisper Large V3",
+    "whisper-large-v3-turbo": "Whisper Large V3 Turbo"
+}
+
 def ask_chatgpt(prompt, api_key):
     """Ask a question to ChatGPT API"""
     try:
@@ -27,21 +41,27 @@ def ask_chatgpt(prompt, api_key):
         logger.error(f"Error en ChatGPT API: {e}")
         return f"Error con la API de ChatGPT: {str(e)}"
 
-def ask_groq(prompt, api_key):
-    """Ask a question to Groq API"""
+def ask_groq(prompt, api_key, model_name="llama-3.3-70b-versatile"):
+    """Ask a question to Groq API with selected model"""
     try:
         if not api_key:
             return "Por favor, ingresa tu Groq API Key en la configuración."
         
         client = Groq(api_key=api_key)
+        # Comprobar si el modelo es de tipo Whisper (para transcripción de audio)
+        if "whisper" in model_name.lower():
+            logger.info(f"Modelo de transcripción seleccionado: {model_name}")
+            return f"Modelo {model_name} es para transcripción de audio, no para chat. Por favor selecciona un modelo LLM para preguntas de texto."
+            
+        # Usar el modelo seleccionado
         chat_completion = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
-            model="llama2-70b-4096",  # Cambiado a modelo disponible y estable
+            model=model_name,
         )
         return chat_completion.choices[0].message.content
     except Exception as e:
-        logger.error(f"Error en Groq API: {e}")
-        return f"Error con la API de Groq: {str(e)}"
+        logger.error(f"Error en Groq API con modelo {model_name}: {e}")
+        return f"Error con la API de Groq (modelo {model_name}): {str(e)}"
 
 def ask_gemini(prompt, api_key):
     """Ask a question to Gemini API using free available models"""
@@ -90,7 +110,7 @@ def ask_gemini(prompt, api_key):
         logger.error(f"Error general con Gemini API: {e}")
         return f"Error de conexión con Gemini: {str(e)}"
 
-def analyze_scraped_data(data, api_key, model="groq"):
+def analyze_scraped_data(data, api_key, model="groq", groq_model="llama-3.3-70b-versatile"):
     """Analyze scraped data using AI"""
     if isinstance(data, pd.DataFrame) and data.empty:
         return "No hay datos para analizar."
@@ -113,7 +133,7 @@ def analyze_scraped_data(data, api_key, model="groq"):
     if model == "chatgpt":
         return ask_chatgpt(prompt, api_key)
     elif model == "groq":
-        return ask_groq(prompt, api_key)
+        return ask_groq(prompt, api_key, groq_model)
     elif model == "gemini":
         return ask_gemini(prompt, api_key)
     else:
