@@ -115,6 +115,19 @@ if 'selected_gemini_model' not in st.session_state:
     st.session_state.selected_gemini_model = "gemini-2.0-flash"
 if 'templates' not in st.session_state:
     st.session_state.templates = get_all_templates()
+# Añadir variables para Selenium
+if 'use_selenium' not in st.session_state:
+    st.session_state.use_selenium = False
+if 'wait_time' not in st.session_state:
+    st.session_state.wait_time = 3
+# Añadir variable para almacenar resultados filtrados
+if 'filtered_results' not in st.session_state:
+    st.session_state.filtered_results = None
+# Variables para mantener estado de los filtros
+if 'tag_filter' not in st.session_state:
+    st.session_state.tag_filter = []
+if 'search_term' not in st.session_state:
+    st.session_state.search_term = ""
 
 # Función para cambiar el modo de visualización
 def change_view_mode():
@@ -316,9 +329,12 @@ with st.sidebar:
         
         # Opciones avanzadas
         with st.expander("⚡ Opciones Avanzadas", expanded=True):
-            use_selenium = st.checkbox("Usar Selenium", value=False,
-                                    help="Para contenido dinámico con JavaScript")
-            wait_time = st.slider("Tiempo espera (s)", 1, 10, 3)
+            # Actualizar para usar session_state
+            st.session_state.use_selenium = st.checkbox("Usar Selenium", 
+                                                       value=st.session_state.use_selenium,
+                                                       help="Para contenido dinámico con JavaScript")
+            st.session_state.wait_time = st.slider("Tiempo espera (s)", 1, 10, 
+                                                  st.session_state.wait_time)
 
 # Título de la app con ícono y descripción compacta
 col1, col2 = st.columns([1, 6])
@@ -561,8 +577,8 @@ with tab1:
                 type="primary"):
         with st.spinner("⏱️ Extrayendo datos..."):
             try:
-                if use_selenium:
-                    results = scrape_website_dynamic(url, st.session_state.selected_tags, wait_time)
+                if st.session_state.use_selenium:  # Usar la variable del estado de sesión
+                    results = scrape_website_dynamic(url, st.session_state.selected_tags, st.session_state.wait_time)
                 else:
                     results = scrape_website_static(url, st.session_state.selected_tags)
                 
@@ -587,22 +603,31 @@ with tab2:
             with st.expander("🔍 Filtros"):
                 tag_filter = st.multiselect("Etiqueta:", 
                                       options=results['Etiqueta'].unique(),
-                                      default=results['Etiqueta'].unique())
-                search_term = st.text_input("Buscar:", "")
+                                      default=st.session_state.tag_filter if st.session_state.tag_filter else results['Etiqueta'].unique(),
+                                      key="tag_filter_compact")
+                search_term = st.text_input("Buscar:", st.session_state.search_term, key="search_term_compact")
         else:
             # Versión desktop: filtros en columnas
             col1, col2 = st.columns(2)
             with col1:
                 tag_filter = st.multiselect("Filtrar por etiqueta:", 
                                           options=results['Etiqueta'].unique(),
-                                          default=results['Etiqueta'].unique())
+                                          default=st.session_state.tag_filter if st.session_state.tag_filter else results['Etiqueta'].unique(),
+                                          key="tag_filter_expanded")
             with col2:
-                search_term = st.text_input("Buscar en contenido:", "")
+                search_term = st.text_input("Buscar en contenido:", st.session_state.search_term, key="search_term_expanded")
+        
+        # Guardar estado de los filtros
+        st.session_state.tag_filter = tag_filter
+        st.session_state.search_term = search_term
         
         # Aplicar filtros
         filtered_results = results[results['Etiqueta'].isin(tag_filter)]
         if search_term:
             filtered_results = filtered_results[filtered_results['Contenido'].str.contains(search_term, case=False, na=False)]
+        
+        # Guardar los resultados filtrados en el estado de sesión
+        st.session_state.filtered_results = filtered_results
         
         # Mostrar resultados
         st.write(f"Mostrando {len(filtered_results)} de {len(results)} resultados")
@@ -745,7 +770,24 @@ with tab3:
     
     # Tab para analizar datos - simplificado
     with ai_tabs[1]:
+        # Verificar si tenemos resultados para analizar
         if st.session_state.scraping_results is not None and not st.session_state.scraping_results.empty:
+            # Crear un interruptor para seleccionar entre resultados completos o filtrados
+            analysis_data_source = st.radio(
+                "Datos a analizar:",
+                ["Resultados filtrados", "Todos los resultados"],
+                horizontal=True,
+                index=0  # Por defecto, usar resultados filtrados
+            )
+            
+            # Determinar qué datos usar para el análisis
+            if analysis_data_source == "Resultados filtrados" and st.session_state.filtered_results is not None:
+                analysis_data = st.session_state.filtered_results
+                st.info(f"Analizando {len(analysis_data)} registros filtrados")
+            else:
+                analysis_data = st.session_state.scraping_results
+                st.info(f"Analizando todos los {len(analysis_data)} registros extraídos")
+            
             ai_model = st.radio("Modelo de IA:", ["Groq", "ChatGPT", "Gemini"], horizontal=True)
             
             # Selector de modelo específico según el proveedor seleccionado - eliminando parámetro search_box
@@ -777,6 +819,14 @@ with tab3:
                 )
                 selected_model = analysis_model
             
+            # Mostrar cantidad estimada de tokens
+            if analysis_data is not None:
+                from utils.ai_helpers import estimate_tokens
+                sample_data = analysis_data.head(15) if len(analysis_data) > 15 else analysis_data
+                data_str = sample_data.to_string()
+                estimated_tokens = estimate_tokens(data_str)
+                st.write(f"Tokens estimados para análisis: ~{estimated_tokens}")
+            
             if st.button("Analizar datos", use_container_width=True):
                 with st.spinner(f"Analizando con {ai_model}..."):
                     api_key = ""
@@ -793,7 +843,7 @@ with tab3:
                         model_type = "gemini"
                         
                     analysis = analyze_scraped_data(
-                        st.session_state.scraping_results,
+                        analysis_data,  # Usamos los datos seleccionados (filtrados o completos)
                         api_key,
                         model_type,
                         selected_model
