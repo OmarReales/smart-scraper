@@ -3,7 +3,7 @@ import pandas as pd
 import time
 from utils.validators import is_valid_url
 from utils.scraper import scrape_website_static, scrape_website_dynamic
-from utils.ai_helpers import ask_chatgpt, ask_groq, ask_gemini, analyze_scraped_data, GROQ_MODELS
+from utils.ai_helpers import ask_chatgpt, ask_groq, ask_gemini, analyze_scraped_data, GROQ_MODELS, OPENAI_MODELS, GEMINI_MODELS
 # Importaciones de los nuevos módulos (ahora se utilizarán)
 from utils.templates import get_all_templates, save_custom_template
 from utils.auto_detect import auto_detect_elements
@@ -15,7 +15,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed",  # Colapsado por defecto en dispositivos pequeños
     menu_items={
-        'Get Help': 'https://github.com/tu-usuario/smart-scraper',
+        'Get Help': 'https://github.com/OmarReales/smart-scraper',
         'About': 'Herramienta para extraer datos de páginas web con Inteligencia Artificial'
     }
 )
@@ -109,6 +109,10 @@ if 'auto_detected_elements' not in st.session_state:
     st.session_state.auto_detected_elements = None
 if 'selected_groq_model' not in st.session_state:
     st.session_state.selected_groq_model = "llama-3.3-70b-versatile"
+if 'selected_openai_model' not in st.session_state:
+    st.session_state.selected_openai_model = "gpt-3.5-turbo"
+if 'selected_gemini_model' not in st.session_state:
+    st.session_state.selected_gemini_model = "gemini-2.0-flash"
 if 'templates' not in st.session_state:
     st.session_state.templates = get_all_templates()
 
@@ -147,7 +151,7 @@ is_url_valid = is_valid_url(url) if url else False
 with st.sidebar:
     st.header("⚙️ Configuración")
     
-    # Navegación principal
+    # Navegación principal - eliminando parámetro search_box
     nav_option = st.selectbox("Navegación:", 
                              ["Extracción", "Plantillas", "Proyectos", "Configuración"])
     
@@ -161,7 +165,7 @@ with st.sidebar:
     elif nav_option == "Plantillas":
         st.subheader("Gestión de Plantillas")
         
-        # Mostrar plantillas disponibles
+        # Mostrar plantillas disponibles - eliminando parámetro search_box
         templates = st.session_state.templates
         selected_template = st.selectbox("Seleccionar plantilla:", 
                                         options=list(templates.keys()),
@@ -199,7 +203,7 @@ with st.sidebar:
     elif nav_option == "Proyectos":
         st.subheader("Gestión de Proyectos")
         
-        # Listar proyectos existentes
+        # Listar proyectos existentes - eliminando parámetro search_box
         projects = list_projects()
         if projects:
             selected_project = st.selectbox("Seleccionar proyecto:", 
@@ -268,12 +272,23 @@ with st.sidebar:
         with st.expander("🔑 API Keys", expanded=True):
             groq_key, gemini_key, chatgpt_key = load_api_keys()
             
-            groq_api_key = st.text_input("Groq API", value=groq_key, type="password")
+            # Sección de ChatGPT/OpenAI - eliminando parámetro search_box
+            st.write("OpenAI:")
+            chatgpt_api_key = st.text_input("OpenAI API Key", value=chatgpt_key, type="password")
+            openai_model = st.selectbox(
+                "Modelo de OpenAI:",
+                options=list(OPENAI_MODELS.keys()),
+                format_func=lambda x: OPENAI_MODELS[x],
+                index=list(OPENAI_MODELS.keys()).index("gpt-3.5-turbo"),
+                key="openai_model_selector"
+            )
+            st.session_state.selected_openai_model = openai_model
             
-            # Agregar selector de modelo de Groq
-            st.write("Modelo de Groq:")
+            # Sección de Groq - eliminando parámetro search_box
+            st.write("Groq:")
+            groq_api_key = st.text_input("Groq API Key", value=groq_key, type="password")
             groq_model = st.selectbox(
-                "Selecciona un modelo:",
+                "Modelo de Groq:",
                 options=list(GROQ_MODELS.keys()),
                 format_func=lambda x: GROQ_MODELS[x],
                 index=list(GROQ_MODELS.keys()).index("llama-3.3-70b-versatile"),
@@ -281,8 +296,17 @@ with st.sidebar:
             )
             st.session_state.selected_groq_model = groq_model
             
-            gemini_api_key = st.text_input("Gemini API", value=gemini_key, type="password")
-            chatgpt_api_key = st.text_input("ChatGPT API", value=chatgpt_key, type="password")
+            # Sección de Gemini - eliminando parámetro search_box
+            st.write("Gemini:")
+            gemini_api_key = st.text_input("Gemini API Key", value=gemini_key, type="password")
+            gemini_model = st.selectbox(
+                "Modelo de Gemini:",
+                options=list(GEMINI_MODELS.keys()),
+                format_func=lambda x: GEMINI_MODELS[x],
+                index=list(GEMINI_MODELS.keys()).index("gemini-2.0-flash"),
+                key="gemini_model_selector"
+            )
+            st.session_state.selected_gemini_model = gemini_model
             
             if st.button("💾 Guardar"):
                 st.session_state.groq_api_key = groq_api_key
@@ -339,7 +363,8 @@ with tab1:
         with col2:
             templates = st.session_state.templates
             template_options = list(templates.keys())
-            selected = st.selectbox("📋 Plantillas", options=template_options,
+            selected = st.selectbox("📋 Plantillas", 
+                                   options=template_options,
                                    format_func=lambda x: templates[x].get("name", x))
             if st.button("Aplicar plantilla", key="apply_template_btn", use_container_width=True):
                 load_template(selected, templates)
@@ -656,8 +681,12 @@ with tab3:
         # En modo compacto, botones en vertical
         if st.session_state.view_mode == "compact":
             if st.button("Preguntar a ChatGPT", use_container_width=True, disabled=not query):
-                with st.spinner("Consultando..."):
-                    response = ask_chatgpt(query, st.session_state.get('chatgpt_api_key', ''))
+                with st.spinner(f"Consultando a ChatGPT (modelo: {OPENAI_MODELS.get(st.session_state.selected_openai_model)})..."):
+                    response = ask_chatgpt(
+                        query, 
+                        st.session_state.get('chatgpt_api_key', ''),
+                        st.session_state.selected_openai_model
+                    )
                     st.write(response)
                     
             if st.button("Preguntar a Groq", use_container_width=True, disabled=not query):
@@ -670,8 +699,12 @@ with tab3:
                     st.write(response)
                     
             if st.button("Preguntar a Gemini", use_container_width=True, disabled=not query):
-                with st.spinner("Consultando..."):
-                    response = ask_gemini(query, st.session_state.get('gemini_api_key', ''))
+                with st.spinner(f"Consultando a Gemini (modelo: {GEMINI_MODELS.get(st.session_state.selected_gemini_model)})..."):
+                    response = ask_gemini(
+                        query, 
+                        st.session_state.get('gemini_api_key', ''),
+                        st.session_state.selected_gemini_model
+                    )
                     st.write(response)
         else:
             # En modo expandido, botones en horizontal
@@ -679,8 +712,12 @@ with tab3:
             
             with col1:
                 if st.button("Preguntar a ChatGPT", use_container_width=True, disabled=not query):
-                    with st.spinner("Consultando a ChatGPT..."):
-                        response = ask_chatgpt(query, st.session_state.get('chatgpt_api_key', ''))
+                    with st.spinner(f"Consultando a ChatGPT (modelo: {OPENAI_MODELS.get(st.session_state.selected_openai_model)})..."):
+                        response = ask_chatgpt(
+                            query, 
+                            st.session_state.get('chatgpt_api_key', ''),
+                            st.session_state.selected_openai_model
+                        )
                         st.write("### ChatGPT")
                         st.write(response)
             
@@ -697,8 +734,12 @@ with tab3:
             
             with col3:
                 if st.button("Preguntar a Gemini", use_container_width=True, disabled=not query):
-                    with st.spinner("Consultando a Gemini..."):
-                        response = ask_gemini(query, st.session_state.get('gemini_api_key', ''))
+                    with st.spinner(f"Consultando a Gemini (modelo: {GEMINI_MODELS.get(st.session_state.selected_gemini_model)})..."):
+                        response = ask_gemini(
+                            query, 
+                            st.session_state.get('gemini_api_key', ''),
+                            st.session_state.selected_gemini_model
+                        )
                         st.write("### Gemini")
                         st.write(response)
     
@@ -707,15 +748,34 @@ with tab3:
         if st.session_state.scraping_results is not None and not st.session_state.scraping_results.empty:
             ai_model = st.radio("Modelo de IA:", ["Groq", "ChatGPT", "Gemini"], horizontal=True)
             
-            # Si se selecciona Groq, mostrar selector de modelo
+            # Selector de modelo específico según el proveedor seleccionado - eliminando parámetro search_box
             if ai_model == "Groq":
-                groq_analysis_model = st.selectbox(
+                analysis_model = st.selectbox(
                     "Modelo Groq para análisis:",
                     options=list(GROQ_MODELS.keys()),
                     format_func=lambda x: GROQ_MODELS[x],
                     index=list(GROQ_MODELS.keys()).index(st.session_state.selected_groq_model),
                     key="groq_analysis_model_selector"
                 )
+                selected_model = analysis_model
+            elif ai_model == "ChatGPT":
+                analysis_model = st.selectbox(
+                    "Modelo OpenAI para análisis:",
+                    options=list(OPENAI_MODELS.keys()),
+                    format_func=lambda x: OPENAI_MODELS[x],
+                    index=list(OPENAI_MODELS.keys()).index(st.session_state.selected_openai_model),
+                    key="openai_analysis_model_selector"
+                )
+                selected_model = analysis_model
+            else:  # Gemini
+                analysis_model = st.selectbox(
+                    "Modelo Gemini para análisis:",
+                    options=list(GEMINI_MODELS.keys()),
+                    format_func=lambda x: GEMINI_MODELS[x],
+                    index=list(GEMINI_MODELS.keys()).index(st.session_state.selected_gemini_model),
+                    key="gemini_analysis_model_selector"
+                )
+                selected_model = analysis_model
             
             if st.button("Analizar datos", use_container_width=True):
                 with st.spinner(f"Analizando con {ai_model}..."):
@@ -725,29 +785,19 @@ with tab3:
                     if ai_model == "ChatGPT":
                         api_key = st.session_state.get('chatgpt_api_key', '')
                         model_type = "chatgpt"
-                        analysis = analyze_scraped_data(
-                            st.session_state.scraping_results,
-                            api_key,
-                            model_type
-                        )
                     elif ai_model == "Groq":
                         api_key = st.session_state.get('groq_api_key', '')
                         model_type = "groq"
-                        groq_model = groq_analysis_model if 'groq_analysis_model' in locals() else st.session_state.selected_groq_model
-                        analysis = analyze_scraped_data(
-                            st.session_state.scraping_results,
-                            api_key,
-                            model_type,
-                            groq_model
-                        )
                     else:
                         api_key = st.session_state.get('gemini_api_key', '')
                         model_type = "gemini"
-                        analysis = analyze_scraped_data(
-                            st.session_state.scraping_results,
-                            api_key,
-                            model_type
-                        )
+                        
+                    analysis = analyze_scraped_data(
+                        st.session_state.scraping_results,
+                        api_key,
+                        model_type,
+                        selected_model
+                    )
                         
                     st.write("### Análisis")
                     st.write(analysis)

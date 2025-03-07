@@ -22,15 +22,33 @@ GROQ_MODELS = {
     "whisper-large-v3-turbo": "Whisper Large V3 Turbo"
 }
 
-def ask_chatgpt(prompt, api_key):
-    """Ask a question to ChatGPT API"""
+# Lista de modelos de OpenAI disponibles
+OPENAI_MODELS = {
+    "gpt-3.5-turbo": "GPT-3.5 Turbo (Recomendado)",
+    "gpt-4o": "GPT-4o (Más potente)",
+    "gpt-4-turbo": "GPT-4 Turbo",
+    "gpt-4": "GPT-4 (Original)",
+    "gpt-3.5-turbo-instruct": "GPT-3.5 Turbo Instruct"
+}
+
+# Lista de modelos de Gemini disponibles
+GEMINI_MODELS = {
+    "gemini-2.0-flash": "Gemini 2.0 Flash (Recomendado)",
+    "gemini-1.5-pro": "Gemini 1.5 Pro",
+    "gemini-1.5-flash": "Gemini 1.5 Flash (Rápido)",
+    "gemini-pro": "Gemini Pro (Estable)",
+    "gemini-pro-vision": "Gemini Pro Vision"
+}
+
+def ask_chatgpt(prompt, api_key, model_name="gpt-3.5-turbo"):
+    """Ask a question to ChatGPT API with selected model"""
     try:
         if not api_key:
             return "Por favor, ingresa tu ChatGPT API Key en la configuración."
         
         client = openai.OpenAI(api_key=api_key)
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",  # Cambiado de gpt-4-turbo a gpt-3.5-turbo (más común y económico)
+            model=model_name,
             messages=[
                 {"role": "system", "content": "Eres un experto en web scraping."},
                 {"role": "user", "content": prompt}
@@ -38,8 +56,8 @@ def ask_chatgpt(prompt, api_key):
         )
         return response.choices[0].message.content
     except Exception as e:
-        logger.error(f"Error en ChatGPT API: {e}")
-        return f"Error con la API de ChatGPT: {str(e)}"
+        logger.error(f"Error en ChatGPT API con modelo {model_name}: {e}")
+        return f"Error con la API de ChatGPT (modelo {model_name}): {str(e)}"
 
 def ask_groq(prompt, api_key, model_name="llama-3.3-70b-versatile"):
     """Ask a question to Groq API with selected model"""
@@ -63,8 +81,8 @@ def ask_groq(prompt, api_key, model_name="llama-3.3-70b-versatile"):
         logger.error(f"Error en Groq API con modelo {model_name}: {e}")
         return f"Error con la API de Groq (modelo {model_name}): {str(e)}"
 
-def ask_gemini(prompt, api_key):
-    """Ask a question to Gemini API using free available models"""
+def ask_gemini(prompt, api_key, model_name="gemini-2.0-flash"):
+    """Ask a question to Gemini API using selected model"""
     try:
         if not api_key:
             return "Por favor, ingresa tu Gemini API Key en la configuración."
@@ -72,46 +90,40 @@ def ask_gemini(prompt, api_key):
         # Configuración básica de Gemini
         genai.configure(api_key=api_key)
         
-        # Lista de modelos a intentar, en orden de preferencia
-        # Los modelos gratuitos tienen límites pero funcionan sin costo
-        models_to_try = [
-            "gemini-2.0-flash",    # Modelo más reciente - primera opción
-            "gemini-pro",          # Segunda opción - modelo principal gratuito
-            "models/gemini-pro",   # Formato alternativo
-            "gemini-1.5-pro-latest-preview", # Modelo más reciente (limitado)
-            "text-bison-001"       # Modelo PaLM más antiguo pero estable
-        ]
-        
-        last_error = None
-        
-        # Intentar cada modelo hasta que uno funcione
-        for model_name in models_to_try:
-            try:
-                logger.info(f"Intentando con modelo Gemini: {model_name}")
-                model = genai.GenerativeModel(model_name)
+        try:
+            logger.info(f"Usando modelo Gemini: {model_name}")
+            model = genai.GenerativeModel(model_name)
+            
+            # Usar configuración básica
+            response = model.generate_content(prompt)
+            
+            if response and hasattr(response, 'text'):
+                return response.text
+            else:
+                return "No se obtuvo respuesta del modelo. Intenta con otro modelo."
                 
-                # Usar configuración básica
+        except Exception as e:
+            logger.error(f"Error con el modelo {model_name}: {e}")
+            
+            # Intentar con modelo de respaldo
+            try:
+                logger.info("Intentando con modelo de respaldo gemini-pro")
+                model = genai.GenerativeModel("gemini-pro")
                 response = model.generate_content(prompt)
                 
                 if response and hasattr(response, 'text'):
-                    return response.text
+                    return "⚠️ Modelo solicitado no disponible. Respuesta generada con el modelo de respaldo gemini-pro:\n\n" + response.text
                 else:
-                    continue  # Si no hay respuesta, probar el siguiente modelo
-                    
-            except Exception as e:
-                last_error = e
-                logger.info(f"No se pudo usar el modelo {model_name}: {e}")
-                continue  # Intentar siguiente modelo
-        
-        # Si llegamos aquí, ningún modelo funcionó
-        return f"No se pudo conectar con Gemini usando los modelos disponibles. Error: {last_error}"
+                    return "No se pudo obtener respuesta de ningún modelo de Gemini."
+            except Exception as backup_error:
+                return f"Error con todos los modelos de Gemini. Error: {str(e)}. Error de respaldo: {str(backup_error)}"
         
     except Exception as e:
         logger.error(f"Error general con Gemini API: {e}")
         return f"Error de conexión con Gemini: {str(e)}"
 
-def analyze_scraped_data(data, api_key, model="groq", groq_model="llama-3.3-70b-versatile"):
-    """Analyze scraped data using AI"""
+def analyze_scraped_data(data, api_key, model="groq", model_name="llama-3.3-70b-versatile"):
+    """Analyze scraped data using AI with selected model"""
     if isinstance(data, pd.DataFrame) and data.empty:
         return "No hay datos para analizar."
     
@@ -131,10 +143,10 @@ def analyze_scraped_data(data, api_key, model="groq", groq_model="llama-3.3-70b-
         prompt = prompt[:8000] + "...[truncado]"
     
     if model == "chatgpt":
-        return ask_chatgpt(prompt, api_key)
+        return ask_chatgpt(prompt, api_key, model_name)
     elif model == "groq":
-        return ask_groq(prompt, api_key, groq_model)
+        return ask_groq(prompt, api_key, model_name)
     elif model == "gemini":
-        return ask_gemini(prompt, api_key)
+        return ask_gemini(prompt, api_key, model_name)
     else:
         return "Modelo de IA no reconocido."
